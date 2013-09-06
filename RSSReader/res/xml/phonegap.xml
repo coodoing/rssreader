@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<phonegap>
+    <!-- 使用PhoneGap内置方式打开，而不是自动调用本地浏览器 -->
+    <access origin="http://*"/>
+    <log level="DEBUG"/>
+</phonegap>

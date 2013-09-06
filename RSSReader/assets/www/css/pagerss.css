@@ -1,0 +1,31 @@
+/*Page Rssitems start*/
+		.rssBody ul, .rssRow {
+			margin-left: 0;
+			padding-left: 0;
+			list-style: none;
+			border-bottom: 1px solid #DDD;
+		}
+		.rssRow h4 { margin: 0; font-size: 1.8em; letter-spacing: -1px; }
+		.rssRow h4 a { text-decoration: none; }
+		.rssRow h4 a:hover { color: darkblue; }
+		.rssRow p a img{height:25px;width:25px;}
+		.rssRow div { font-size: 0.9em; color: #999; }
+		/*end Rssitmes*/
+		/*page RssFeed start*/
+		.RssFeedItem{
+			padding:5px 0px 5px 10px;
+		}
+		.RssFeedA{
+			color:#222;
+			text-decoration:none;
+			padding-top:15px;
+			padding-bottom:15px;
+			font-size:1.16em;
+		}
+		.RssFeedBtn{
+			color:#222;
+			float:right;
+			display:inline;
+			font-size:0.7em;
+		}
+		/*page RssFeed end*/

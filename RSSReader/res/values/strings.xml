@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <string name="hello">Hello World, RSSReaderActivity!</string>
+    <string name="app_name">RSSReader</string>
+	<string name="sohurss">http://rss.news.sohu.com/rss.shtml</string>
+	<string name="wangyirss">http://www.163.com/rss/</string>
+	<string name="sinarss">http://rss.sina.com.cn/news/</string>
+	
+</resources>

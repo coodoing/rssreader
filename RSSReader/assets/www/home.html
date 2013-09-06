@@ -1,0 +1,701 @@
+<!DOCTYPE html lang="zh-CN">
+<html>    
+    <head>
+        <meta http-equiv="Access-Control-Allow-Origin" name="viewport" content="width = device-width, user-scalable = no"
+        charset="GBK">
+        <title>
+            RSS Reader
+        </title>
+        <link rel="stylesheet" href="css/jquery.mobile-1.1.0.min.css" />
+        <link rel="stylesheet" href="css/rss.css" />
+        <link rel="stylesheet" href="css/pagerss.css" />
+        <script src="js/jquery-1.7.1.min.js" charset="GBK" defer>
+        </script>
+        <script src="js/jquery.mobile-1.1.0.min.js" charset="GBK" defer>
+        </script>
+        <script src="phonegap.js" charset="GBK" defer>
+        </script>
+        <script src="js/date.js" charset="GBK" defer>
+        </script>
+        <script src="js/zssfeed/jquery.zrssfeed.min.js" charset="GBK" defer>
+        </script>
+        <!--phonegap及全局操作-->
+        <script type="text/javascript">
+            //全局变量
+            var titleArr = new Array();
+            var linkArr = new Array();
+            var contentArr = new Array();
+            var pubdateArr = new Array();
+            var LOADITEM = 20; //加载条目
+            var TOTALNUMBER = 0; //新闻频道下订阅信息数量
+			/*****************************************
+			*        等待加载PhoneGap				 *
+			******************************************/
+            document.addEventListener("deviceready", onDeviceReady, false);
+            function onDeviceReady() {
+                console.log("load success");
+            }
+			/*****************************************
+			*        退出phonegap				     *
+			******************************************/
+            function exit() {
+                localStorage.clear();
+                navigator.app.exitApp();
+            }
+			/*****************************************
+			*        去掉空格				 		 *
+			******************************************/
+            String.prototype.Trim = function() {
+                return this.replace(/(^\s*)|(\s*$)/g, "");
+            }
+
+			/*****************************************
+			*        更换手机阅读器皮肤	   	 		 *
+			******************************************/
+			var colori = 1;
+            function changeColor() {
+                if (colori % 2) $(".headCol").css({
+                    background: "#3E3E3E",
+                    color: "#EEE"
+                });
+                else $(".headCol").css({
+                    background: "#EEE",
+                    color: "#3E3E3E"
+                });
+                colori++;
+            }
+        </script>
+        <!--数据库初始化操作-->
+        <script type="text/javascript">
+			/*****************************************
+			*        打开sqlite数据库：RSSDB	   	 *
+			******************************************/
+            try {
+                if (!window.openDatabase) {
+                    alert('The Browser don\'t support this db!');
+                } else {
+                    var db = window.openDatabase("rss", "1.0", "RSSDB", 65535);
+                }
+            } catch(e) {}
+            function $$(elemID) {
+                return document.getElementById(elemID)
+            }
+			/*****************************************
+			*        数据出错处理	   			     *
+			******************************************/
+            function errorHandler(tx, error) {
+                alert('Error was: ' + error.message + '(Code:' + error.code + ')');
+                var fatal_error = true;
+                if (fatal_error) {
+                    return true;
+                }
+                return false;
+            }
+			/*****************************************
+			*        空数据处理	   			    	 *
+			******************************************/
+            function nullDataHandler(tx, results) {}
+            /*****************************************
+			*        创建数据表	   			    	 *
+			******************************************/
+            db.transaction(function(transaction) {
+                //已订阅新闻频道subscribed表
+                transaction.executeSql('CREATE TABLE IF NOT EXISTS subscribed (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, url TEXT NOT NULL, date DATE);', [], nullDataHandler, errorHandler);
+                //新闻列表rssitems表
+                transaction.executeSql('CREATE TABLE IF NOT EXISTS rssitems (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, link TEXT NOT NULL,description TEXT NOT NULL, pubdate DATE NOT NULL, caturl TEXT NOT NULL,isread INTEGER NOT NULL);', [], nullDataHandler, errorHandler);
+            });
+        </script>
+        <!--添加新的订阅源，获取新闻列表操作-->
+        <script type="text/javascript">
+            /*****************************************
+			*        获取所有订阅源	   			     *
+			******************************************/
+            db.transaction(function(transaction) {
+                transaction.executeSql("SELECT * from subscribed;", [], dataHandler, errorHandler);
+            });
+            /*****************************************
+			*        添加新的RSS订阅源				 *
+			******************************************/
+            function addRSS() {
+                var rssTit = $$('rssTitle').value.Trim();
+                var rssurl = $$('rssUrl').value.Trim();
+                var reg = /^https?:\/\/.+$/i;
+                if (rssTit == "") {
+                    alert("标题不能为空！");
+                    $$('rssTitle').focus();
+                    return false;
+                }
+                if (rssTit.length > 50) {
+                    alert("标题长度不能超过50！");
+                    $$('rssTitle').focus();
+                    return false;
+                }
+                if (rssurl == "") {
+                    alert("网址不能为空！");
+                    $$('rssUrl').focus();
+                    return false;
+                }
+                if (rssurl != "" && !reg.test(rssurl)) {
+                    alert("网址输入不合法：必须以'http:\/\/'开头!");
+                    $$('rssUrl').focus();
+                    return false;
+                }
+                db.transaction(function(transaction) {
+                    transaction.executeSql('INSERT INTO subscribed (title,url,date) VALUES ("' + rssTit + '","' + rssurl + '","' + new Date().toString("yyyy-M-dd hh:mm:ss") + '");', [], nullDataHandler, errorHandler);
+                    transaction.executeSql("SELECT * from subscribed ;", [], dataHandler, errorHandler);
+                });
+                userCloseAdd();
+                $$('rssTitle').value = '';
+                $$('rssUrl').value = '';
+            }
+			/*****************************************
+			*	关闭添加rss页面 			 		 *
+			******************************************/
+            function userCloseAdd() {
+                showHomePage();
+            }
+            /*****************************************
+			*	获取数据后的页面展示处理 			 *
+			******************************************/
+            function dataHandler(transaction, results) {
+                var string = "";
+                for (var i = 0; i < results.rows.length; i++) {
+                    var row = results.rows.item(i); //console.log("<a onclick='userShowRSS(this.id)' id='"+ row['id']);
+                    string += "<li><a onclick='userShowRSS(" + row['id'] + ")' href='#" + row['id'] + "'>" + row['title'] + "</a></li>";
+                }
+                var rssList = $$('rssList');
+                rssList.innerHTML = string;
+            }
+            /*****************************************
+			*	显示已订阅新闻频道 					 *
+			******************************************/
+            function userShowRSS(nid) {
+                showRSSItemPage();
+                db.transaction(function(transaction) {
+                    transaction.executeSql("SELECT * from subscribed WHERE id=" + nid + ";", [], successDB, errorHandler);
+                });
+            }
+            /*****************************************
+			*	transaction:事务处理				 *
+			*	result：返回数据结果				 *
+			*	                         			 *
+			*	显示RSS订阅源返回的新闻列表信息，    *
+			*   并插入数据库，同时把列表信息缓存     *
+			******************************************/
+            function successDB(transaction, results) {
+                var rssTit = $$("rssTitleShow");
+                var rssurl = $$("rssUrlShow");
+                for (var i = 0; i < results.rows.length; i++) {
+                    var row = results.rows.item(i);
+                    var cid = "id" + row['id'];
+                    rssTit.innerHTML = row['title'];
+                    rssurl.innerHTML = '<a href="' + row['url'] + '"></a>';
+					$("#itemTitle").html(row['title']);	
+
+                    $("#subscribeID").hide();
+                    $("#subscribeID").html(row['url']);
+					$("#hiddencid").hide();
+                    $("#hiddencid").html(cid);	
+
+                    if (localStorage.getItem(cid) == null || localStorage.getItem(cid) == "") {
+                        showRSSItem(row['url']);
+                        setTimeout("rssitemsDB('" + row['url'] + "')", 1000);
+                        setTimeout("loadRSSItemFromDB('" + row['url'] + "')", 1000);
+                        setTimeout("cacheRSSItem('" + cid + "')", 3000);
+                    } else {
+                        var cached = localStorage.getItem(cid);
+                        $('#items').html(cached);
+                    }
+                }
+            }
+        </script>
+        <!--页面之间跳转操作-->
+        <script type="text/javascript">
+            /*****************************************
+			*	用户已订阅新闻频道页面				 *
+			******************************************/
+            function showHomePage() {
+                $('#homePage').fadeIn();
+                $('#addPage').hide();
+                $('#feedsPage').hide();
+                $('#itemPage').hide();
+                $('#contentPage').hide();
+            }
+            /*****************************************
+			*	用户添加RSS订阅源页面				 *
+			******************************************/
+            function showAddPage() {
+                $('#homePage').hide();
+                $("#addPage").fadeIn();
+                $('#feedsPage').hide();
+                $('#itemPage').hide();
+                $('#contentPage').hide();
+            }
+            /*****************************************
+			*	返回新闻列表页面  				     *
+			******************************************/
+            function userBack() {
+                $('#homePage').hide();
+                $("#addPage").hide();
+                $('#feedsPage').hide();
+                $('#itemPage').fadeIn();
+                $('#contentPage').hide();
+            }
+            /*****************************************
+			*	显示所有订阅源页面 				     *
+			******************************************/
+            function showFeedsPage() {
+                $('#homePage').hide();
+                $("#addPage").hide();
+                $('#feedsPage').fadeIn();
+                $('#itemPage').hide();
+                $('#contentPage').hide();
+            }
+            /*****************************************
+			*	显示新闻列表页面 				     *
+			******************************************/
+            function showRSSItemPage() {
+                $('#homePage').hide();
+                $('#addPage').hide();
+                $('#feedsPage').hide();
+                $('#itemPage').fadeIn();
+                $('#contentPage').hide();
+            }
+            /*****************************************
+			*	显示新闻具体内容页面 				 *
+			******************************************/
+            function showItemContentPage() {
+                $('#homePage').hide();
+                $('#addPage').hide();
+                $('#feedsPage').hide();
+                $('#itemPage').hide();
+                $('#contentPage').fadeIn();
+            }
+        </script>
+		<!--RSS解析过程和XML解析过程相关操作-->
+        <script type="text/javascript">
+            var sohuxml = "xml/rssfeed.xml";
+            var testxml = "xml/rss-20.xml"; //$.support.cors = true; //跨域
+            /*****************************************
+			*	获取所有订阅源  				     *
+			******************************************/
+            function getFeedsSource() {
+                getContent(populateNewsItems);
+            }
+            /*****************************************
+			*	跨域获取XML中所有订阅源 			 *
+			******************************************/
+            function getContent(handler) {
+                $.ajax({
+                    type: "get",
+                    dataType: ($.browser.msie) ? "text": "xml",
+                    url: sohuxml,
+                    success: handler
+                });
+            }
+			/*****************************************
+			*	xml0：xml对象           			 *
+			*	通过对XML DOM结构进行分析，实现对    *
+			*   XML解析                 			 *
+			******************************************/
+            function populateNewsItems(xml0) {
+                var xml;
+                if (typeof xml0 == "string") {
+                    xml = new ActiveXObject("Microsoft.XMLDOM");
+                    xml.async = false;
+                    xml.loadXML(xml0);
+                } else {
+                    xml = xml0;
+                }
+                var tmpTxt = "";
+                var $list = $("#feedslist");
+                $list.empty();                
+                var index = 1;
+                $(xml).find("feed").each(function() {
+                    var feed = $(this);
+                    var name = feed.attr("name");
+                    var items = feed.find("item");
+                    tmpTxt = tmpTxt + "<li data-role=\"list-divider\">" + name + "</li>";
+                    $.each(items,
+                    function() {
+                        var itemid = index + "itemID";
+                        var item = $(this);
+                        var title = item.find("title").text();
+                        var link = item.find("rssurl").text();	
+                        tmpTxt = tmpTxt + "<li data-icon=\"check\">" + title + "";
+                        tmpTxt = tmpTxt + "<span id='" + itemid + "'></span>";
+						
+                        var data = addCancelSubsscribed(link, title, itemid);
+						
+                        index = index + 1;
+                        tmpTxt = tmpTxt + "</li>";
+                    });
+                });
+                var sublist = $(tmpTxt);
+                $list.append(sublist);
+                $list.listview("refresh");
+                showFeedsPage();
+            }
+			/*****************************************
+			*	link：RSS源地址           			 *
+			*	title：RSS源标题           			 *
+			*	itemid：id标志           			 *
+			*	       			                     *
+			*	添加取消订阅按钮：如果当前xml已被订  *
+			*   阅，则可以点击取消；如果没有没订阅， *
+			*   可以选择进行订阅           			 *
+			******************************************/
+            function addCancelSubsscribed(link, title, itemid) {
+                var data = "";
+                db.transaction(function(transaction) {
+                    transaction.executeSql("SELECT * from subscribed WHERE url='" + link + "';", [],
+                    function querySuccess(tx, results) {                        
+                        var len = results.rows.length;
+                        var result = "";	
+                        var btnset = "";
+                        var $element = $('#' + itemid);
+                        if (len == 0) {
+                            result += "未订阅";                            
+                            btnset = btnset + '<img src=\'images/add.png\' style=\'float:right;\' onclick="insertRss(\'' + title + '\',\'' + link + '\',\'' + itemid + '\');"/>';
+                            $element.html(btnset);
+                        } else {
+                            result += "已订阅";                            
+                            btnset = btnset + '<img src=\'images/cancel.png\' style=\'float:right;\' onclick="deleteRss(\'' + title + '\',\'' + link + '\',\'' + itemid + '\')";/>';
+                            $element.html(btnset); 
+                        }
+                        data = result; 
+                        return function dataresult() {
+                            return result;
+                        };
+                    },
+                    errorHandler);
+                });	
+            }
+            /*****************************************
+			*	url：RSS源地址           			 *
+			*	       			                     *
+			*	根据RSS源地址异步获取最新新闻信息    *
+			******************************************/
+            function showRSSItem(url) {
+                clearRSSItem();
+                var dbstatus, latestdate;
+                var currentdate = new Date().toString("yyyy-M-dd hh:mm:ss");
+                db.transaction(function(transaction) {
+                    console.log("SELECT * from rssitems WHERE caturl='" + url + "' ORDER BY pubdate DESC;");
+                    transaction.executeSql("SELECT * from rssitems WHERE caturl='" + url + "' ORDER BY pubdate DESC;", [],
+                    function queryComplete(tx, results) {
+                        var len = results.rows.length;
+                        if (len == 0) {
+                            dbstatus = "00"; //第一次加载						   
+                        } else {
+                            var row = results.rows.item(0);
+                            dbstatus = "01";
+                            latestdate = row["pubdate"];
+                            console.log("latestdate=" + latestdate + "   title=" + row['title']);
+                        }
+                        //异步获取最新新闻信息
+                        $('#blankitem').rssfeed(url, {
+                            limit: LOADITEM,
+                            header: false,
+                            date: false,
+                            status: dbstatus,
+                            latestDATE: latestdate
+                        });
+                    },
+                    errorHandler);
+                });
+            }
+			/*****************************************
+			*	url：RSS源地址           			 *
+			*	       			                     *
+			*	把从网络中获取的最新新闻列表插入到   *
+			*   数据库中							 *
+			******************************************/
+            function rssitemsDB(url) {
+                var len = titleArr.length;
+                db.transaction(function(transaction) {
+                    for (var i = 0; i < len; i++) {
+                        transaction.executeSql('INSERT INTO rssitems (title,link,description,pubdate,caturl,isread) VALUES ("' + titleArr[i] + '","' + linkArr[i] + '","' + contentArr[i] + '","' + pubdateArr[i].toString("yyyy-M-dd HH:mm:ss") + '","' + url + '",0);', []);
+                    }
+                });
+            }
+			/*****************************************
+			*	url：RSS源地址           			 *
+			*	       			                     *
+			*	从数据库中加载新闻列表 				 *
+			******************************************/
+            function loadRSSItemFromDB(url) {
+                db.transaction(function(transaction) {
+                    console.log("SELECT * from rssitems WHERE caturl='" + url + "' ORDER BY pubdate DESC limit 0," + LOADITEM + ";");
+                    transaction.executeSql("SELECT * from rssitems WHERE caturl='" + url + "' ORDER BY pubdate DESC limit 0," + LOADITEM + ";", [],
+                    function queryComplete(tx, results) {
+                        var len = results.rows.length;
+                        var divcontent = "";
+                        var odd = "odd";
+                        divcontent += '<div class="rssBody"><ul>';
+                        for (var i = 0; i < len; i++) {
+                            var row = results.rows.item(i);
+                            divcontent += '<li class="rssRow ' + odd + '"><a href="#" title="View this feed at ' + row['title'] + ' " onclick=showContent("' + row['link'] + '","' + row['caturl'] + '",' + row['id'] + ')>' + row['title'] + "</a>";
+                        }
+                        odd = "odd" == odd ? "even": "odd";
+                        divcontent += "</ul></div>";
+                        $('#items').html(divcontent);
+                    },
+                    errorHandler);
+                });
+            }			
+			/*****************************************
+			*	cid：缓存所对应的key       			 *
+			*	       			                     *
+			*	缓存最新新闻列表，方便离线查询和减少 *
+			*   服务器的负担   						 *
+			******************************************/
+            function cacheRSSItem(cid) {
+                sessionStorage.cid = "session";
+                localStorage.setItem(cid, $('#items').html());
+            }
+			/*****************************************
+			*	清空新闻列表页 						 *
+			******************************************/
+            function clearRSSItem() {
+                $('#items').html("");
+                titleArr = new Array();
+                linkArr = new Array();
+                contentArr = new Array();
+                pubdateArr = new Array();
+            }
+        </script>
+		<!--RSS解析过程和XML解析过程相关操作-->
+        <script type="text/javascript">
+			/*****************************************
+			*	link：新闻新闻详细网址     			 *
+			*	caturl：RSS源地址           	     *
+			*	itemid：id标志           			 *
+			*	       			                     *
+			*	添加订阅    					     *
+			******************************************/
+            function insertRss(title, link, itemid) {
+                db.transaction(function(transaction) {
+                    transaction.executeSql("SELECT * from subscribed WHERE url='" + link + "';", [],
+                    function queryComplete(tx, results) {
+                        var len = results.rows.length;
+                        if (len == 0) {
+                            transaction.executeSql('INSERT INTO subscribed (title,url,date) VALUES ("' + title + '","' + link + '","' + new Date().toString("yyyy-M-dd hh:mm:ss") + '");', [],
+                            function insertSuccess(tx, results) {
+                                //添加订阅成功后状态的切换
+                                var btnset = "";
+                                var $element = $('#' + itemid);
+                                btnset = btnset + '<img src=\'images/cancel.png\' style=\'float:right;\' onclick="deleteRss(\'' + title + '\',\'' + link + '\',\'' + itemid + '\');"/>';
+                                $element.html(btnset);
+                            },
+                            errorHandler);
+                            transaction.executeSql("SELECT * from subscribed ;", [], dataHandler, errorHandler);
+                        }
+                    },
+                    errorHandler);
+                });
+            }
+			/*****************************************
+			*	link：新闻新闻详细网址     			 *
+			*	caturl：RSS源地址           	     *
+			*	itemid：id标志           			 *
+			*	       			                     *
+			*	取消订阅    					     *
+			******************************************/
+            function deleteRss(title, link, itemid) {
+                db.transaction(function(transaction) {
+                    transaction.executeSql("DELETE FROM subscribed where url='" + link + "';", [],
+                    function deleteSuccess(tx, results) {
+                        //取消订阅成功后状态的切换
+                        var btnset = "";
+                        var $element = $('#' + itemid);                        
+                        btnset = btnset + '<img src=\'images/add.png\' style=\'float:right;\' onclick="insertRss(\'' + title + '\',\'' + link + '\',\'' + itemid + '\');" />';
+                        $element.html(btnset);
+                    },
+                    errorHandler);
+                    //级联删除:删除rssitem数据库中数据
+                    transaction.executeSql("DELETE FROM rssitems where caturl='" + link + "';", []);
+                    var cid = "id" + itemid.substring(0, 1);
+                    //删除缓存中内容
+                    localStorage.removeItem(cid);
+                    transaction.executeSql("SELECT * from subscribed ;", [], dataHandler, errorHandler);
+                });
+            }
+			/*****************************************
+			*	link：新闻新闻详细网址     			 *
+			*	caturl：RSS源地址           	     *
+			*	id：id标志           			     *
+			*	       			                     *
+			*	显示新闻内容页 					     *
+			******************************************/
+            function showContent(link, caturl, id) {
+                $('#content').html("");
+                showItemContentPage();
+                db.transaction(function(transaction) {
+                    console.log("SELECT * from rssitems WHERE id=" + id + " ORDER BY pubdate DESC;");
+                    transaction.executeSql("SELECT * from rssitems WHERE id=" + id + ";", [],
+                    function queryComplete(tx, results) {
+                        var len = results.rows.length;
+                        var divcontent = "";
+                        var odd = "odd";
+                        divcontent += '<div class="rssBody"><ul>';
+                        for (var i = 0; i < len; i++) {
+                            var row = results.rows.item(i);
+                            divcontent += '<li class="rssRow ' + odd + '"><a href="#">' + row['title'] + "</a>";
+                            divcontent += "<p>" + row['description'] + "</p>";
+                            divcontent += "<p>" + row['pubdate'] + "</p>";
+                        }
+                        odd = "odd" == odd ? "even": "odd";
+                        divcontent += "</ul></div>";
+                        divcontent += "<div>详细信息请访问网址：<a href='" + link + "' target='_blank'>" + link + "</a></div>";
+                        $('#content').html(divcontent);
+                    },
+                    errorHandler);
+                    //更新状态为已读
+                    transaction.executeSql("UPDATE rssitems SET isread=1 WHERE id=" + id + ";");
+                });
+            }
+			/*****************************************
+			*	显示更多新闻信息 					 *
+			******************************************/
+            function showMore() {}
+        </script>
+        <!--手动 自动刷新-->
+        <script type="text/javascript">
+			//设置自动定时刷新，刷新间隔为10分钟
+            setInterval(refresh, 600000); 
+			/*****************************************
+			*	手动刷新新闻列表页 					 *
+			******************************************/
+            function refresh() {
+				$("#hiddencid").hide();
+                var url = $("#subscribeID").text();
+                var cid = $('#hiddencid').text();
+                showRSSItem(url);
+                setTimeout("rssitemsDB('" + url + "')", 1000);
+                setTimeout("loadRSSItemFromDB('" + url + "')", 1000);
+				//清除缓存
+                localStorage.removeItem(cid); 
+                setTimeout("cacheRSSItem('" + cid + "')", 3000);
+            }
+        </script>
+    </head>    
+    <body>
+        <div id="layout">
+            <!--主页面-->
+            <div class="page" id="homePage">
+                <div data-role="header" data-position="inline" data-theme="c" class="headCol">
+                    <a href="#" onclick="getFeedsSource()" data-icon="grid" data-role="button">
+                        订阅源
+                    </a>
+                    <h1>
+                        RSS阅读器
+                    </h1>
+                    <a href="#" data-role="button" data-icon="plus" onclick="showAddPage()" >
+                        添加
+                    </a>
+                </div>
+                <ul id="rssList">
+                </ul>
+                <a href="#" data-role="button" onclick="changeColor()">
+                    更换皮肤
+                </a>
+            </div>
+            <!--添加RSS源页面-->
+            <div class="page hide" id="addPage">
+                <div data-role="header" data-theme="c" class="headCol">
+                    <a href="#" data-role="button" style="display:none;">
+                    </a>
+                    <h1>
+                        添加RSS订阅源
+                    </h1>
+                    <a href="#" data-role="button" data-icon="home" onclick="showHomePage()">
+                        主页
+                    </a>
+                </div>
+                <form>
+                    <p>
+                        <label for="title">
+                            标题:
+                        </label>
+                        <input type="text" name="title" id="rssTitle" />
+                    </p>
+                    <p>
+                        <label for="title">
+                            地址:
+                        </label>
+                        <input type="text" name="url" id="rssUrl" />
+                    </p>
+                    <p>
+                        <input type="button" value="提交" text="Submit" onclick="addRSS()" />
+                    </p>
+                </form>
+            </div>
+            <!--所有订阅源页面-->
+            <div class="RssFeedpage hide" id="feedsPage">
+                <div data-role="header" data-theme="c" class="headCol">
+                    <a href="#" data-role="button" style="display:none;">
+                    </a>
+                    <h1>
+                        订阅源
+                    </h1>
+                    <a href="#" data-role="button" data-icon="home" onclick="showHomePage()" >
+                        主页
+                    </a>
+                </div>
+                <div hidden>
+                    <h2 id="rssTitleShow">
+                    </h2>
+                    <p id="rssUrlShow">
+                    </p>
+                </div>
+                <p>
+                </p>
+                <!--新闻列表显示-->
+                <div id="feeds">
+                    <ul id="feedslist" data-role="listview" data-filter="true" data-divider-theme="c"
+                    data-filter-placeholder="Search feeds..." data-filter-theme="c">
+                    </ul>
+                </div>
+            </div>
+            <!--新闻列表页面-->
+            <div class="page hide" id="itemPage">
+                <div data-role="header" data-theme="c" class="headCol">
+                    <a href="#" data-role="button" data-icon="refresh" onclick="refresh()">
+                        刷新
+                    </a>
+                    <h1>
+                        <div id="itemTitle"></div>
+                    </h1>
+                    <a href="#" data-role="button" data-icon="home" onclick="showHomePage()" >
+                        主页
+                    </a>
+                </div>
+                <!--显示新闻列表-->
+                <div id="items">
+                </div>
+                <!--隐藏DIV-->
+                <div id="subscribeID" class="hidden" hidden>
+                </div>
+                <div id="hiddencid" class="hidden" hidden>
+                </div>
+                <div id="blankitem" class="hidden" hidden>
+                </div>                
+            </div>
+            <!--新闻内容页面-->
+            <div class="itempage hide" id="contentPage">
+                <div data-role="header" data-theme="c" class="headCol">
+                    <a href="#" data-role="button" data-icon="back" onclick="userBack()" >
+                        返回
+                    </a>
+                    <h1>                        
+                    </h1>
+                    <a href="#" data-role="button" data-icon="home" onclick="showHomePage()">
+                        主页
+                    </a>
+                </div>
+                <div id="content">
+                </div>
+            </div>
+    </body>
+</html>
