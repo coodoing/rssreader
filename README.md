@@ -26,4 +26,4 @@ android rssreader( PhoneGap)
 
 2、系统难点
 1) RSS源解析和XML解析；
-2) 数据存储设计和刷新业务逻辑;
+2) 数据存储设计和刷新业务逻辑。
